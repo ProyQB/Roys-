@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
     <!-- Navigation Bar -->
     <nav class="navbar">
         <div class="nav-container">
@@ -34,10 +35,10 @@
     <!-- Search Bar -->
     <section class="search-section">
         <div class="search-container">
-            <input 
-                type="text" 
-                id="search-input" 
-                class="search-bar" 
+            <input
+                type="text"
+                id="search-input"
+                class="search-bar"
                 placeholder="Search hoodies, sweats, shirts..."
                 onkeyup="filterProducts()"
             >
@@ -77,53 +78,21 @@
                     <button class="toggle-btn active" onclick="showLogin()">Login</button>
                     <button class="toggle-btn" onclick="showSignup()">Sign Up</button>
                 </div>
-
                 <!-- Login Form -->
                 <form id="login-form" class="auth-form active">
                     <h2>Login</h2>
-                    <input 
-                        type="email" 
-                        placeholder="Email" 
-                        required
-                        class="input-field"
-                    >
-                    <input 
-                        type="password" 
-                        placeholder="Password" 
-                        required
-                        class="input-field"
-                    >
+                    <input type="email" placeholder="Email" required class="input-field">
+                    <input type="password" placeholder="Password" required class="input-field">
                     <button type="submit" class="auth-btn">Login</button>
                     <p class="error-message" id="login-error"></p>
                 </form>
-
                 <!-- Signup Form -->
                 <form id="signup-form" class="auth-form">
                     <h2>Create Account</h2>
-                    <input 
-                        type="text" 
-                        placeholder="Full Name" 
-                        required
-                        class="input-field"
-                    >
-                    <input 
-                        type="email" 
-                        placeholder="Email" 
-                        required
-                        class="input-field"
-                    >
-                    <input 
-                        type="password" 
-                        placeholder="Password" 
-                        required
-                        class="input-field"
-                    >
-                    <input 
-                        type="password" 
-                        placeholder="Confirm Password" 
-                        required
-                        class="input-field"
-                    >
+                    <input type="text" placeholder="Full Name" required class="input-field">
+                    <input type="email" placeholder="Email" required class="input-field">
+                    <input type="password" placeholder="Password" required class="input-field">
+                    <input type="password" placeholder="Confirm Password" required class="input-field">
                     <button type="submit" class="auth-btn">Sign Up</button>
                     <p class="error-message" id="signup-error"></p>
                 </form>
@@ -145,18 +114,15 @@
                     <input type="text" placeholder="City" required class="input-field">
                     <input type="text" placeholder="Zip Code" required class="input-field">
                 </div>
-
                 <div class="form-section">
                     <h3>Payment Information</h3>
                     <input type="text" placeholder="Card Number" maxlength="16" required class="input-field">
                     <input type="text" placeholder="Expiry Date (MM/YY)" required class="input-field">
                     <input type="text" placeholder="CVV" maxlength="3" required class="input-field">
                 </div>
-
                 <div class="order-summary">
                     <p>Order Total: $<span id="checkout-total">0.00</span></p>
                 </div>
-
                 <button type="submit" class="submit-btn">Complete Purchase</button>
             </form>
         </div>
@@ -167,6 +133,9 @@
         <p id="success-text"></p>
     </div>
 
+    <!-- ✅ Supabase CDN - must be BEFORE script.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="script.js"></script>
+
 </body>
 </html>
