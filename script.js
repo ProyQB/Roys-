@@ -1,4 +1,13 @@
-// Sample Products Database
+// ============================================
+// SUPABASE CONFIGURATION
+// ============================================
+const SUPABASE_URL = 'https://gxjgxxewwqqzfdpakmym.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_PdBj_TZlHQpVwHQmQt4x5g_HAQ47znq';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ============================================
+// Sample Products Database (unchanged)
+// ============================================
 const products = [
     {
         id: 1,
@@ -74,58 +83,50 @@ const products = [
     },
 ];
 
-// Cart Array
+// ============================================
+// Cart Array & State
+// ============================================
 let cart = [];
 let currentUser = null;
 
-// Local Storage Keys
-const USERS_KEY = 'orc_users';
-const CART_KEY = 'orc_cart';
-const CURRENT_USER_KEY = 'orc_current_user';
-
+// ============================================
 // Initialize App
-document.addEventListener('DOMContentLoaded', function() {
+// ============================================
+document.addEventListener('DOMContentLoaded', async function () {
     loadProducts();
-    loadCart();
-    loadCurrentUser();
+    await loadCurrentUser();   // Supabase session check
+    await loadCart();          // Load cart from Supabase
     setupEventListeners();
 });
 
-// Setup Event Listeners
+// ============================================
+// Setup Event Listeners (unchanged)
+// ============================================
 function setupEventListeners() {
-    // Login Form
     const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-        loginForm.addEventListener('submit', handleLogin);
-    }
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
 
-    // Signup Form
     const signupForm = document.getElementById('signup-form');
-    if (signupForm) {
-        signupForm.addEventListener('submit', handleSignup);
-    }
+    if (signupForm) signupForm.addEventListener('submit', handleSignup);
 
-    // Checkout Form
     const checkoutForm = document.getElementById('checkout-form');
-    if (checkoutForm) {
-        checkoutForm.addEventListener('submit', handleCheckout);
-    }
+    if (checkoutForm) checkoutForm.addEventListener('submit', handleCheckout);
 
-    // Cart Icon
     const cartIcon = document.querySelector('.cart-link');
     if (cartIcon) {
-        cartIcon.addEventListener('click', function(e) {
+        cartIcon.addEventListener('click', function (e) {
             e.preventDefault();
             openCartModal();
         });
     }
 }
 
-// Load Products
+// ============================================
+// Load Products (unchanged)
+// ============================================
 function loadProducts() {
     const container = document.getElementById('products-container');
     container.innerHTML = '';
-
     products.forEach(product => {
         const productCard = document.createElement('div');
         productCard.className = 'product-card';
@@ -137,7 +138,7 @@ function loadProducts() {
                 <p class="product-description">${product.description}</p>
                 <p class="product-price">$${product.price}</p>
                 <div class="product-sizes" id="sizes-${product.id}">
-                    ${product.sizes.map(size => 
+                    ${product.sizes.map(size =>
                         `<button class="size-btn" data-size="${size}" onclick="selectSize(this, ${product.id})">${size}</button>`
                     ).join('')}
                 </div>
@@ -148,76 +149,114 @@ function loadProducts() {
     });
 }
 
-// Select Size
+// ============================================
+// Select Size (unchanged)
+// ============================================
 function selectSize(element, productId) {
     const sizeBtns = document.querySelectorAll(`#sizes-${productId} .size-btn`);
     sizeBtns.forEach(btn => btn.classList.remove('active'));
     element.classList.add('active');
 }
 
-// Add to Cart
-function addToCart(productId) {
+// ============================================
+// CART - Supabase powered
+// ============================================
+
+// Load cart from Supabase (if logged in) else empty
+async function loadCart() {
+    if (!currentUser) {
+        cart = [];
+        updateCartCount();
+        return;
+    }
+    const { data, error } = await supabase
+        .from('cart')
+        .select('*')
+        .eq('user_id', currentUser.id);
+
+    if (error) {
+        console.error('Error loading cart:', error.message);
+        cart = [];
+    } else {
+        cart = data || [];
+    }
+    updateCartCount();
+}
+
+// Add to cart - saves to Supabase
+async function addToCart(productId) {
     const product = products.find(p => p.id === productId);
     const sizeBtn = document.querySelector(`#sizes-${productId} .size-btn.active`);
-    
+
     if (!sizeBtn) {
         showError('Please select a size');
         return;
     }
-
     const size = sizeBtn.getAttribute('data-size');
-    
-    const cartItem = {
-        id: cart.length,
-        productId: productId,
-        name: product.name,
-        price: product.price,
-        size: size,
-        quantity: 1
-    };
 
-    const existingItem = cart.find(item => item.productId === productId && item.size === size);
-    
-    if (existingItem) {
-        existingItem.quantity += 1;
-    } else {
-        cart.push(cartItem);
+    if (!currentUser) {
+        showError('Please login to add items to cart');
+        showLoginModal();
+        return;
     }
 
-    saveCart();
+    // Check if item already exists in cart
+    const existingItem = cart.find(item => item.product_id === productId && item.size === size);
+
+    if (existingItem) {
+        // Update quantity in Supabase
+        const { error } = await supabase
+            .from('cart')
+            .update({ quantity: existingItem.quantity + 1 })
+            .eq('id', existingItem.id);
+
+        if (!error) existingItem.quantity += 1;
+    } else {
+        // Insert new cart item
+        const { data, error } = await supabase
+            .from('cart')
+            .insert([{
+                user_id: currentUser.id,
+                product_id: productId,
+                name: product.name,
+                price: product.price,
+                size: size,
+                quantity: 1
+            }])
+            .select()
+            .single();
+
+        if (!error && data) cart.push(data);
+        if (error) console.error('Add to cart error:', error.message);
+    }
+
     updateCartCount();
     showSuccess(`${product.name} added to cart!`);
 }
 
-// Remove from Cart
-function removeFromCart(cartId) {
-    cart = cart.filter(item => item.id !== cartId);
-    saveCart();
-    updateCartCount();
-    loadCartItems();
+// Remove from cart - deletes from Supabase
+async function removeFromCart(cartId) {
+    const { error } = await supabase
+        .from('cart')
+        .delete()
+        .eq('id', cartId);
+
+    if (!error) {
+        cart = cart.filter(item => item.id !== cartId);
+        updateCartCount();
+        loadCartItems();
+    } else {
+        console.error('Remove from cart error:', error.message);
+    }
 }
 
-// Update Cart Count
+// Update Cart Count (unchanged)
 function updateCartCount() {
     const countElement = document.getElementById('cart-count');
     countElement.textContent = cart.length;
 }
 
-// Save Cart to Local Storage
-function saveCart() {
-    localStorage.setItem(CART_KEY, JSON.stringify(cart));
-}
-
-// Load Cart from Local Storage
-function loadCart() {
-    const savedCart = localStorage.getItem(CART_KEY);
-    if (savedCart) {
-        cart = JSON.parse(savedCart);
-        updateCartCount();
-    }
-}
-
-// Load Cart Items in Modal
+// Load Cart Items in Modal (updated to use Supabase cart shape)
 function loadCartItems() {
     const cartItemsDiv = document.getElementById('cart-items');
     cartItemsDiv.innerHTML = '';
@@ -231,7 +270,6 @@ function loadCartItems() {
     cart.forEach(item => {
         const itemTotal = item.price * item.quantity;
         total += itemTotal;
-
         const cartItemDiv = document.createElement('div');
         cartItemDiv.className = 'cart-item';
         cartItemDiv.innerHTML = `
@@ -251,18 +289,18 @@ function loadCartItems() {
     document.getElementById('checkout-total').textContent = total.toFixed(2);
 }
 
-// Filter Products by Search
+// ============================================
+// Filter Products (unchanged)
+// ============================================
 function filterProducts() {
     const searchInput = document.getElementById('search-input').value.toLowerCase();
     const productCards = document.querySelectorAll('.product-card');
-
     productCards.forEach(card => {
         const productName = card.querySelector('.product-name').textContent.toLowerCase();
         const productCategory = card.querySelector('.product-category').textContent.toLowerCase();
         const productDescription = card.querySelector('.product-description').textContent.toLowerCase();
-
-        if (productName.includes(searchInput) || 
-            productCategory.includes(searchInput) || 
+        if (productName.includes(searchInput) ||
+            productCategory.includes(searchInput) ||
             productDescription.includes(searchInput)) {
             card.style.display = 'block';
         } else {
@@ -271,59 +309,46 @@ function filterProducts() {
     });
 }
 
-// Modal Functions
+// ============================================
+// Modal Functions (unchanged)
+// ============================================
 function showLoginModal() {
-    const modal = document.getElementById('login-modal');
-    modal.classList.add('active');
+    document.getElementById('login-modal').classList.add('active');
 }
-
 function closeLoginModal() {
-    const modal = document.getElementById('login-modal');
-    modal.classList.remove('active');
+    document.getElementById('login-modal').classList.remove('active');
 }
-
 function openCartModal() {
     loadCartItems();
-    const modal = document.getElementById('cart-modal');
-    modal.classList.add('active');
+    document.getElementById('cart-modal').classList.add('active');
 }
-
 function closeCartModal() {
-    const modal = document.getElementById('cart-modal');
-    modal.classList.remove('active');
+    document.getElementById('cart-modal').classList.remove('active');
 }
-
 function proceedToCheckout() {
-    if (cart.length === 0) {
-        showError('Cart is empty');
-        return;
-    }
-
+    if (cart.length === 0) { showError('Cart is empty'); return; }
     if (!currentUser) {
         showError('Please login first');
         closeCartModal();
         showLoginModal();
         return;
     }
-
     closeCartModal();
-    const modal = document.getElementById('checkout-modal');
-    modal.classList.add('active');
+    document.getElementById('checkout-modal').classList.add('active');
 }
-
 function closeCheckoutModal() {
-    const modal = document.getElementById('checkout-modal');
-    modal.classList.remove('active');
+    document.getElementById('checkout-modal').classList.remove('active');
 }
 
-// Auth Functions
+// ============================================
+// Auth Toggle (unchanged)
+// ============================================
 function showLogin() {
     document.getElementById('login-form').classList.add('active');
     document.getElementById('signup-form').classList.remove('active');
     document.querySelectorAll('.toggle-btn')[0].classList.add('active');
     document.querySelectorAll('.toggle-btn')[1].classList.remove('active');
 }
-
 function showSignup() {
     document.getElementById('signup-form').classList.add('active');
     document.getElementById('login-form').classList.remove('active');
@@ -331,32 +356,42 @@ function showSignup() {
     document.querySelectorAll('.toggle-btn')[0].classList.remove('active');
 }
 
-// Handle Login
-function handleLogin(e) {
+// ============================================
+// AUTH - Supabase powered
+// ============================================
+
+// Handle Login via Supabase Auth
+async function handleLogin(e) {
     e.preventDefault();
-    
     const email = e.target.querySelector('input[type="email"]').value;
     const password = e.target.querySelector('input[type="password"]').value;
 
-    const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
-    const user = users.find(u => u.email === email && u.password === password);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (user) {
-        currentUser = user;
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-        showSuccess('Login successful!');
-        closeLoginModal();
-        updateAuthMenu();
-        e.target.reset();
-    } else {
-        document.getElementById('login-error').textContent = 'Invalid email or password';
+    if (error) {
+        document.getElementById('login-error').textContent = error.message;
+        return;
     }
+
+    currentUser = data.user;
+    // Fetch profile name
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('id', currentUser.id)
+        .single();
+    if (profile) currentUser.name = profile.name;
+
+    await loadCart();
+    showSuccess('Login successful!');
+    closeLoginModal();
+    updateAuthMenu();
+    e.target.reset();
 }
 
-// Handle Signup
-function handleSignup(e) {
+// Handle Signup via Supabase Auth
+async function handleSignup(e) {
     e.preventDefault();
-    
     const name = e.target.querySelector('input[type="text"]').value;
     const email = e.target.querySelectorAll('input[type="email"]')[0].value;
     const password = e.target.querySelectorAll('input[type="password"]')[0].value;
@@ -367,26 +402,19 @@ function handleSignup(e) {
         return;
     }
 
-    const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
-    
-    if (users.find(u => u.email === email)) {
-        document.getElementById('signup-error').textContent = 'Email already registered';
+    const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { name } }   // stored in raw_user_meta_data, trigger picks it up
+    });
+
+    if (error) {
+        document.getElementById('signup-error').textContent = error.message;
         return;
     }
 
-    const newUser = {
-        id: Date.now(),
-        name: name,
-        email: email,
-        password: password,
-        createdAt: new Date().toISOString()
-    };
-
-    users.push(newUser);
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-
-    currentUser = newUser;
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser));
+    currentUser = data.user;
+    if (currentUser) currentUser.name = name;
 
     showSuccess('Account created successfully!');
     closeLoginModal();
@@ -394,45 +422,59 @@ function handleSignup(e) {
     e.target.reset();
 }
 
-// Handle Checkout
-function handleCheckout(e) {
+// Handle Checkout - saves order to Supabase, clears cart
+async function handleCheckout(e) {
     e.preventDefault();
-
-    // Validate form
     const inputs = e.target.querySelectorAll('input');
     let isValid = true;
-    inputs.forEach(input => {
-        if (!input.value.trim()) {
-            isValid = false;
-        }
-    });
+    inputs.forEach(input => { if (!input.value.trim()) isValid = false; });
+    if (!isValid) { showError('Please fill all fields'); return; }
 
-    if (!isValid) {
-        showError('Please fill all fields');
+    const [fullName, email, address, city, zipCode] = [...inputs].map(i => i.value.trim());
+    const orderNumber = '#' + Math.random().toString(36).substr(2, 9).toUpperCase();
+    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+    // Save order to Supabase
+    const { error: orderError } = await supabase
+        .from('orders')
+        .insert([{
+            user_id: currentUser.id,
+            order_number: orderNumber,
+            full_name: fullName,
+            email: email,
+            address: address,
+            city: city,
+            zip_code: zipCode,
+            total: total.toFixed(2),
+            items: cart,
+            status: 'pending'
+        }]);
+
+    if (orderError) {
+        console.error('Order save error:', orderError.message);
+        showError('Order failed. Please try again.');
         return;
     }
 
-    // Process payment (simulate)
-    const orderNumber = '#' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    const orderDate = new Date().toLocaleDateString();
-
-    // Clear cart after successful checkout
+    // Clear cart in Supabase
+    await supabase.from('cart').delete().eq('user_id', currentUser.id);
     cart = [];
-    saveCart();
     updateCartCount();
-
-    showSuccess(`Order placed successfully! Order Number: ${orderNumber}`);
+    showSuccess(`Order placed successfully! Order: ${orderNumber}`);
     closeCheckoutModal();
     e.target.reset();
 }
 
-// Update Auth Menu
+// ============================================
+// Auth Menu & Session
+// ============================================
+
+// Update nav auth menu (unchanged logic)
 function updateAuthMenu() {
     const authMenu = document.getElementById('auth-menu');
-    
     if (currentUser) {
         authMenu.innerHTML = `
-            <a href="#" class="nav-link" onclick="logout(event)">${currentUser.name} (Logout)</a>
+            <a href="#" class="nav-link" onclick="logout(event)">${currentUser.name || currentUser.email} (Logout)</a>
         `;
     } else {
         authMenu.innerHTML = `
@@ -441,57 +483,75 @@ function updateAuthMenu() {
     }
 }
 
-// Logout
-function logout(e) {
+// Logout via Supabase
+async function logout(e) {
     e.preventDefault();
+    await supabase.auth.signOut();
     currentUser = null;
-    localStorage.removeItem(CURRENT_USER_KEY);
+    cart = [];
+    updateCartCount();
     updateAuthMenu();
     showSuccess('Logged out successfully!');
 }
 
-// Load Current User
-function loadCurrentUser() {
-    const savedUser = localStorage.getItem(CURRENT_USER_KEY);
-    if (savedUser) {
-        currentUser = JSON.parse(savedUser);
+// Load current session from Supabase on page load
+async function loadCurrentUser() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session && session.user) {
+        currentUser = session.user;
+        // Fetch profile name
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('name')
+            .eq('id', currentUser.id)
+            .single();
+        if (profile) currentUser.name = profile.name;
         updateAuthMenu();
     }
 }
 
-// Utility Functions
+// Listen for auth state changes (handles email confirmation, token refresh etc.)
+supabase.auth.onAuthStateChange(async (event, session) => {
+    if (session && session.user) {
+        currentUser = session.user;
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('name')
+            .eq('id', currentUser.id)
+            .single();
+        if (profile) currentUser.name = profile.name;
+        updateAuthMenu();
+        await loadCart();
+    } else {
+        currentUser = null;
+        cart = [];
+        updateCartCount();
+        updateAuthMenu();
+    }
+});
+
+// ============================================
+// Utility Functions (unchanged)
+// ============================================
 function showSuccess(message) {
     const successDiv = document.getElementById('success-message');
     document.getElementById('success-text').textContent = message;
     successDiv.classList.add('active');
-
-    setTimeout(() => {
-        successDiv.classList.remove('active');
-    }, 3000);
+    setTimeout(() => { successDiv.classList.remove('active'); }, 3000);
 }
-
 function showError(message) {
-    alert(message); // Simple error display
+    alert(message);
 }
-
 function scrollToShop() {
-    const shopSection = document.getElementById('shop');
-    shopSection.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('shop').scrollIntoView({ behavior: 'smooth' });
 }
 
-// Close modals when clicking outside
-window.addEventListener('click', function(event) {
+// Close modals when clicking outside (unchanged)
+window.addEventListener('click', function (event) {
     const loginModal = document.getElementById('login-modal');
     const cartModal = document.getElementById('cart-modal');
     const checkoutModal = document.getElementById('checkout-modal');
-
-    if (event.target === loginModal) {
-        loginModal.classList.remove('active');
-    }
-    if (event.target === cartModal) {
-        cartModal.classList.remove('active');
-    }
-    if (event.target === checkoutModal) {
-        checkoutModal.classList.remove('active');
-    }
+    if (event.target === loginModal) loginModal.classList.remove('active');
+    if (event.target === cartModal) cartModal.classList.remove('active');
+    if (event.target === checkoutModal) checkoutModal.classList.remove('active');
 });
